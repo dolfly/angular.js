@@ -10,6 +10,11 @@
 angular.scenario = angular.scenario || {};
 
 /**
+ * Expose jQuery (e.g. for custom dsl extensions).
+ */
+angular.scenario.jQuery = _jQuery;
+
+/**
  * Defines a new output format.
  *
  * @param {string} name the name of the new output format
@@ -34,6 +39,7 @@ angular.scenario.output = angular.scenario.output || function(name, fn) {
  */
 angular.scenario.dsl = angular.scenario.dsl || function(name, fn) {
   angular.scenario.dsl[name] = function() {
+    /* jshint -W040 *//* The dsl binds `this` for us when calling chained functions */
     function executeStatement(statement, args) {
       var result = statement.apply(this, args);
       if (angular.isFunction(result) || result instanceof angular.scenario.Future)
@@ -69,18 +75,17 @@ angular.scenario.dsl = angular.scenario.dsl || function(name, fn) {
  */
 angular.scenario.matcher = angular.scenario.matcher || function(name, fn) {
   angular.scenario.matcher[name] = function(expected) {
-    var prefix = 'expect ' + this.future.name + ' ';
-    if (this.inverse) {
-      prefix += 'not ';
-    }
+    var description = this.future.name +
+                      (this.inverse ? ' not ' : ' ') + name +
+                      ' ' + angular.toJson(expected);
     var self = this;
-    this.addFuture(prefix + name + ' ' + angular.toJson(expected),
+    this.addFuture('expect ' + description,
       function(done) {
         var error;
         self.actual = self.future.value;
         if ((self.inverse && fn.call(self, expected)) ||
             (!self.inverse && !fn.call(self, expected))) {
-          error = 'expected ' + angular.toJson(expected) +
+          error = 'expected ' + description +
             ' but was ' + angular.toJson(self.actual);
         }
         done(error);
@@ -145,7 +150,7 @@ angular.scenario.setUpAndRun = function(config) {
 
 /**
  * Iterates through list with iterator function that must call the
- * continueFunction to continute iterating.
+ * continueFunction to continue iterating.
  *
  * @param {Array} list list to iterate over
  * @param {function()} iterator Callback function(value, continueFunction)
@@ -223,97 +228,6 @@ function callerFile(offset) {
   };
 }
 
-/**
- * Triggers a browser event. Attempts to choose the right event if one is
- * not specified.
- *
- * @param {Object} element Either a wrapped jQuery/jqLite node or a DOMElement
- * @param {string} type Optional event type.
- * @param {Array.<string>=} keys Optional list of pressed keys
- *        (valid values: 'alt', 'meta', 'shift', 'ctrl')
- */
-function browserTrigger(element, type, keys) {
-  if (element && !element.nodeName) element = element[0];
-  if (!element) return;
-  if (!type) {
-    type = {
-        'text':            'change',
-        'textarea':        'change',
-        'hidden':          'change',
-        'password':        'change',
-        'button':          'click',
-        'submit':          'click',
-        'reset':           'click',
-        'image':           'click',
-        'checkbox':        'click',
-        'radio':           'click',
-        'select-one':      'change',
-        'select-multiple': 'change'
-    }[lowercase(element.type)] || 'click';
-  }
-  if (lowercase(nodeName_(element)) == 'option') {
-    element.parentNode.value = element.value;
-    element = element.parentNode;
-    type = 'change';
-  }
-
-  keys = keys || [];
-  function pressed(key) {
-    return indexOf(keys, key) !== -1;
-  }
-
-  if (msie < 9) {
-    switch(element.type) {
-      case 'radio':
-      case 'checkbox':
-        element.checked = !element.checked;
-        break;
-    }
-    // WTF!!! Error: Unspecified error.
-    // Don't know why, but some elements when detached seem to be in inconsistent state and
-    // calling .fireEvent() on them will result in very unhelpful error (Error: Unspecified error)
-    // forcing the browser to compute the element position (by reading its CSS)
-    // puts the element in consistent state.
-    element.style.posLeft;
-
-    // TODO(vojta): create event objects with pressed keys to get it working on IE<9
-    var ret = element.fireEvent('on' + type);
-    if (lowercase(element.type) == 'submit') {
-      while(element) {
-        if (lowercase(element.nodeName) == 'form') {
-          element.fireEvent('onsubmit');
-          break;
-        }
-        element = element.parentNode;
-      }
-    }
-    return ret;
-  } else {
-    var evnt = document.createEvent('MouseEvents'),
-        originalPreventDefault = evnt.preventDefault,
-        iframe = _jQuery('#application iframe')[0],
-        appWindow = iframe ? iframe.contentWindow : window,
-        fakeProcessDefault = true,
-        finalProcessDefault;
-
-    // igor: temporary fix for https://bugzilla.mozilla.org/show_bug.cgi?id=684208
-    appWindow.angular['ff-684208-preventDefault'] = false;
-    evnt.preventDefault = function() {
-      fakeProcessDefault = false;
-      return originalPreventDefault.apply(evnt, arguments);
-    };
-
-    evnt.initMouseEvent(type, true, true, window, 0, 0, 0, 0, 0, pressed('ctrl'), pressed('alt'),
-                        pressed('shift'), pressed('meta'), 0, element);
-
-    element.dispatchEvent(evnt);
-    finalProcessDefault = !(appWindow.angular['ff-684208-preventDefault'] || !fakeProcessDefault);
-
-    delete appWindow.angular['ff-684208-preventDefault'];
-
-    return finalProcessDefault;
-  }
-}
 
 /**
  * Don't use the jQuery trigger method since it works incorrectly.
@@ -325,9 +239,10 @@ function browserTrigger(element, type, keys) {
  * To work around this we instead use our own handler that fires a real event.
  */
 (function(fn){
-  var parentTrigger = fn.trigger;
+  // We need a handle to the original trigger function for input tests.
+  var parentTrigger = fn._originalTrigger = fn.trigger;
   fn.trigger = function(type) {
-    if (/(click|change|keydown|blur|input)/.test(type)) {
+    if (/(click|change|keydown|blur|input|mousedown|mouseup)/.test(type)) {
       var processDefaults = [];
       this.each(function(index, node) {
         processDefaults.push(browserTrigger(node, type));
@@ -357,15 +272,15 @@ _jQuery.fn.bindings = function(windowJquery, bindExp) {
       if (actualExp) {
         actualExp = actualExp.replace(/\s/g, '');
         if (actualExp == bindExp) return true;
-        if (actualExp.indexOf(bindExp) == 0) {
+        if (actualExp.indexOf(bindExp) === 0) {
           return actualExp.charAt(bindExp.length) == '|';
         }
       }
-    }
+    };
   } else if (bindExp) {
     match = function(actualExp) {
       return actualExp && bindExp.exec(actualExp);
-    }
+    };
   } else {
     match = function(actualExp) {
       return !!actualExp;
@@ -377,7 +292,7 @@ _jQuery.fn.bindings = function(windowJquery, bindExp) {
   }
 
   function push(value) {
-    if (value == undefined) {
+    if (value === undefined) {
       value = '';
     } else if (typeof value != 'string') {
       value = angular.toJson(value);

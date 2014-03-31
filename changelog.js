@@ -16,7 +16,6 @@ var LINK_ISSUE = '[#%s](https://github.com/angular/angular.js/issues/%s)';
 var LINK_COMMIT = '[%s](https://github.com/angular/angular.js/commit/%s)';
 
 var EMPTY_COMPONENT = '$$';
-var MAX_SUBJECT_LENGTH = 80;
 
 
 var warn = function() {
@@ -36,16 +35,15 @@ var parseRawCommit = function(raw) {
   msg.breaks = [];
 
   lines.forEach(function(line) {
-    match = line.match(/Closes\s#(\d+)/);
+    match = line.match(/(?:Closes|Fixes)\s#(\d+)/);
     if (match) msg.closes.push(parseInt(match[1]));
   });
-  
+
   match = raw.match(/BREAKING CHANGE:([\s\S]*)/);
   if (match) {
-    console.log('found!!!')
-    msg.breaks.push(match[1]);
+    msg.breaking = match[1];
   }
-  
+
 
   msg.body = lines.join('\n');
   match = msg.subject.match(/^(.*)\((.*)\)\:\s(.*)$/);
@@ -53,11 +51,6 @@ var parseRawCommit = function(raw) {
   if (!match || !match[1] || !match[3]) {
     warn('Incorrect message: %s %s', msg.hash, msg.subject);
     return null;
-  }
-
-  if (match[3].length > MAX_SUBJECT_LENGTH) {
-    warn('Too long subject: %s %s', msg.hash, msg.subject);
-    match[3] = match[3].substr(0, MAX_SUBJECT_LENGTH);
   }
 
   msg.type = match[1];
@@ -88,7 +81,8 @@ var currentDate = function() {
 };
 
 
-var printSection = function(stream, title, section) {
+var printSection = function(stream, title, section, printCommitLinks) {
+  printCommitLinks = printCommitLinks === undefined ? true : printCommitLinks;
   var components = Object.getOwnPropertyNames(section).sort();
 
   if (!components.length) return;
@@ -109,11 +103,15 @@ var printSection = function(stream, title, section) {
     }
 
     section[name].forEach(function(commit) {
-      stream.write(util.format('%s %s (%s', prefix, commit.subject, linkToCommit(commit.hash)));
-      if (commit.closes.length) {
-        stream.write(', closes ' + commit.closes.map(linkToIssue).join(', '));
+      if (printCommitLinks) {
+        stream.write(util.format('%s %s\n  (%s', prefix, commit.subject, linkToCommit(commit.hash)));
+        if (commit.closes.length) {
+          stream.write(',\n   ' + commit.closes.map(linkToIssue).join(', '));
+        }
+        stream.write(')\n');
+      } else {
+        stream.write(util.format('%s %s', prefix, commit.subject));
       }
-      stream.write(')\n');
     });
   });
 
@@ -122,7 +120,7 @@ var printSection = function(stream, title, section) {
 
 
 var readGitLog = function(grep, from) {
-  var deffered = q.defer();
+  var deferred = q.defer();
 
   // TODO(vojta): if it's slow, use spawn and stream it instead
   child.exec(util.format(GIT_LOG_CMD, grep, '%H%n%s%n%b%n==END==', from), function(code, stdout, stderr) {
@@ -133,10 +131,10 @@ var readGitLog = function(grep, from) {
       if (commit) commits.push(commit);
     });
 
-    deffered.resolve(commits);
+    deferred.resolve(commits);
   });
 
-  return deffered.promise;
+  return deferred.promise;
 };
 
 
@@ -144,6 +142,7 @@ var writeChangelog = function(stream, commits, version) {
   var sections = {
     fix: {},
     feat: {},
+    perf: {},
     breaks: {}
   };
 
@@ -158,36 +157,38 @@ var writeChangelog = function(stream, commits, version) {
       section[component].push(commit);
     }
 
-    commit.breaks.forEach(function(breakMsg) {
-      sections.breaks[EMPTY_COMPONENT].push({
-        subject: breakMsg,
+    if (commit.breaking) {
+      sections.breaks[component] = sections.breaks[component] || [];
+      sections.breaks[component].push({
+        subject: util.format("due to %s,\n %s", linkToCommit(commit.hash), commit.breaking),
         hash: commit.hash,
         closes: []
       });
-    });
+    };
   });
 
   stream.write(util.format(HEADER_TPL, version, version, currentDate()));
   printSection(stream, 'Bug Fixes', sections.fix);
   printSection(stream, 'Features', sections.feat);
-  printSection(stream, 'Breaking Changes', sections.breaks);
+  printSection(stream, 'Performance Improvements', sections.perf);
+  printSection(stream, 'Breaking Changes', sections.breaks, false);
 }
 
 
 var getPreviousTag = function() {
-  var deffered = q.defer();
+  var deferred = q.defer();
   child.exec(GIT_TAG_CMD, function(code, stdout, stderr) {
-    if (code) deffered.reject('Cannot get the previous tag.');
-    else deffered.resolve(stdout.replace('\n', ''));
+    if (code) deferred.reject('Cannot get the previous tag.');
+    else deferred.resolve(stdout.replace('\n', ''));
   });
-  return deffered.promise;
+  return deferred.promise;
 };
 
 
 var generate = function(version, file) {
   getPreviousTag().then(function(tag) {
     console.log('Reading git log since', tag);
-    readGitLog('^fix|^feat|Breaks', tag).then(function(commits) {
+    readGitLog('^fix|^feat|^perf|BREAKING', tag).then(function(commits) {
       console.log('Parsed', commits.length, 'commits');
       console.log('Generating changelog to', file || 'stdout', '(', version, ')');
       writeChangelog(file ? fs.createWriteStream(file) : process.stdout, commits, version);

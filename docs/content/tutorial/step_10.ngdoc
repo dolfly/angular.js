@@ -1,5 +1,6 @@
-@ngdoc overview
-@name Tutorial: 10 - Event Handlers
+@ngdoc tutorial
+@name 10 - Event Handlers
+@step 10
 @description
 
 <ul doc-tutorial-nav="10"></ul>
@@ -13,31 +14,31 @@ In this step, you will add a clickable phone image swapper to the phone details 
 
 The phone details view displays one large image of the current phone and several smaller thumbnail
 images. It would be great if we could replace the large image with any of the thumbnails just by
-clicking on the desired thumbnail image. Let's have a look at how we can do this with angular.
+clicking on the desired thumbnail image. Let's have a look at how we can do this with Angular.
 
-The most important changes are listed below. You can see the full diff on {@link
-https://github.com/angular/angular-phonecat/compare/step-9...step-10
-GitHub}:
+The most important changes are listed below. You can see the full diff on [GitHub](https://github.com/angular/angular-phonecat/compare/step-9...step-10):
 
 
 ## Controller
 
 __`app/js/controllers.js`:__
-<pre>
+
+```js
 ...
-function PhoneDetailCtrl($scope, $routeParams, $http) {
-  $http.get('phones/' + $routeParams.phoneId + '.json').success(function(data) {
-    $scope.phone = data;
-    $scope.mainImageUrl = data.images[0];
-  });
+var phonecatControllers = angular.module('phonecatControllers',[]);
 
-  $scope.setImage = function(imageUrl) {
-    $scope.mainImageUrl = imageUrl;
-  }
-}
+phonecatControllers.controller('PhoneDetailCtrl', ['$scope', '$routeParams', '$http',
+  function($scope, $routeParams, $http) {
+    $http.get('phones/' + $routeParams.phoneId + '.json').success(function(data) {
+      $scope.phone = data;
+      $scope.mainImageUrl = data.images[0];
+    });
 
-//PhoneDetailCtrl.$inject = ['$scope', '$routeParams', '$http'];
-</pre>
+    $scope.setImage = function(imageUrl) {
+      $scope.mainImageUrl = imageUrl;
+    }
+  }]);
+```
 
 In the `PhoneDetailCtrl` controller, we created the `mainImageUrl` model property and set its
 default value to the first phone image URL.
@@ -48,7 +49,8 @@ We also created a `setImage` event handler function that will change the value o
 ## Template
 
 __`app/partials/phone-detail.html`:__
-<pre>
+
+```html
 <img ng-src="{{mainImageUrl}}" class="phone">
 
 ...
@@ -59,11 +61,11 @@ __`app/partials/phone-detail.html`:__
   </li>
 </ul>
 ...
-</pre>
+```
 
 We bound the `ngSrc` directive of the large image to the `mainImageUrl` property.
 
-We also registered an {@link api/ng.directive:ngClick `ngClick`}
+We also registered an {@link ng.directive:ngClick `ngClick`}
 handler with thumbnail images. When a user clicks on one of the thumbnail images, the handler will
 use the `setImage` event handler function to change the value of the `mainImageUrl` property to the
 URL of the thumbnail image.
@@ -80,7 +82,8 @@ to the first phone image by default. The second test clicks on several thumbnail
 verifies that the main image changed appropriately.
 
 __`test/e2e/scenarios.js`:__
-<pre>
+
+```js
 ...
   describe('Phone detail view', function() {
 
@@ -100,12 +103,10 @@ __`test/e2e/scenarios.js`:__
     });
   });
 });
-</pre>
+```
 
-You can now refresh the browser tab with the end-to-end test runner to see the tests run, or you
-can see them running on {@link
-http://angular.github.com/angular-phonecat/step-8/test/e2e/runner.html
-angular's server}.
+You can now rerun `./scripts/e2e-test.sh` or refresh the browser tab with the end-to-end test
+runner to see the tests run, or you can see them running on [Angular's server](http://angular.github.com/angular-phonecat/step-10/test/e2e/runner.html).
 
 # Experiments
 
@@ -119,7 +120,7 @@ angular's server}.
 
           <button ng-click="hello('Elmo')">Hello</button>
 
-  to the `phone-details.html` template.
+  to the `phone-detail.html` template.
 
 <div style="display: none">
 TODO!
@@ -134,7 +135,7 @@ template remains operational.
 
 # Summary
 
-With the phone image swapper in place, we're ready for {@link step_11 step 11} (the last step!) to
+With the phone image swapper in place, we're ready for {@link step_11 step 11} to
 learn an even better way to fetch data.
 
 

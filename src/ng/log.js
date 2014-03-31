@@ -1,47 +1,72 @@
 'use strict';
 
 /**
- * @ngdoc object
- * @name ng.$log
+ * @ngdoc service
+ * @name $log
  * @requires $window
  *
  * @description
- * Simple service for logging. Default implementation writes the message
+ * Simple service for logging. Default implementation safely writes the message
  * into the browser's console (if present).
  *
  * The main purpose of this service is to simplify debugging and troubleshooting.
  *
+ * The default is to log `debug` messages. You can use
+ * {@link ng.$logProvider ng.$logProvider#debugEnabled} to change this.
+ *
  * @example
-    <doc:example>
-      <doc:source>
-         <script>
-           function LogCtrl($log) {
-             this.$log = $log;
-             this.message = 'Hello World!';
-           }
-         </script>
-         <div ng-controller="LogCtrl">
-           <p>Reload this page with open console, enter text and hit the log button...</p>
-           Message:
-           <input type="text" ng-model="message"/>
-           <button ng-click="$log.log(message)">log</button>
-           <button ng-click="$log.warn(message)">warn</button>
-           <button ng-click="$log.info(message)">info</button>
-           <button ng-click="$log.error(message)">error</button>
-         </div>
-      </doc:source>
-      <doc:scenario>
-      </doc:scenario>
-    </doc:example>
+   <example>
+     <file name="script.js">
+       function LogCtrl($scope, $log) {
+         $scope.$log = $log;
+         $scope.message = 'Hello World!';
+       }
+     </file>
+     <file name="index.html">
+       <div ng-controller="LogCtrl">
+         <p>Reload this page with open console, enter text and hit the log button...</p>
+         Message:
+         <input type="text" ng-model="message"/>
+         <button ng-click="$log.log(message)">log</button>
+         <button ng-click="$log.warn(message)">warn</button>
+         <button ng-click="$log.info(message)">info</button>
+         <button ng-click="$log.error(message)">error</button>
+       </div>
+     </file>
+   </example>
  */
 
+/**
+ * @ngdoc provider
+ * @name $logProvider
+ * @description
+ * Use the `$logProvider` to configure how the application logs messages
+ */
 function $LogProvider(){
+  var debug = true,
+      self = this;
+
+  /**
+   * @ngdoc property
+   * @name $logProvider#debugEnabled
+   * @description
+   * @param {boolean=} flag enable or disable debug level messages
+   * @returns {*} current value if used as getter or itself (chaining) if used as setter
+   */
+  this.debugEnabled = function(flag) {
+    if (isDefined(flag)) {
+      debug = flag;
+    return this;
+    } else {
+      return debug;
+    }
+  };
+
   this.$get = ['$window', function($window){
     return {
       /**
        * @ngdoc method
-       * @name ng.$log#log
-       * @methodOf ng.$log
+       * @name $log#log
        *
        * @description
        * Write a log message
@@ -50,18 +75,7 @@ function $LogProvider(){
 
       /**
        * @ngdoc method
-       * @name ng.$log#warn
-       * @methodOf ng.$log
-       *
-       * @description
-       * Write a warning message
-       */
-      warn: consoleLog('warn'),
-
-      /**
-       * @ngdoc method
-       * @name ng.$log#info
-       * @methodOf ng.$log
+       * @name $log#info
        *
        * @description
        * Write an information message
@@ -70,13 +84,38 @@ function $LogProvider(){
 
       /**
        * @ngdoc method
-       * @name ng.$log#error
-       * @methodOf ng.$log
+       * @name $log#warn
+       *
+       * @description
+       * Write a warning message
+       */
+      warn: consoleLog('warn'),
+
+      /**
+       * @ngdoc method
+       * @name $log#error
        *
        * @description
        * Write an error message
        */
-      error: consoleLog('error')
+      error: consoleLog('error'),
+
+      /**
+       * @ngdoc method
+       * @name $log#debug
+       *
+       * @description
+       * Write a debug message
+       */
+      debug: (function () {
+        var fn = consoleLog('debug');
+
+        return function() {
+          if (debug) {
+            fn.apply(self, arguments);
+          }
+        };
+      }())
     };
 
     function formatError(arg) {
@@ -94,9 +133,16 @@ function $LogProvider(){
 
     function consoleLog(type) {
       var console = $window.console || {},
-          logFn = console[type] || console.log || noop;
+          logFn = console[type] || console.log || noop,
+          hasApply = false;
 
-      if (logFn.apply) {
+      // Note: reading logFn.apply throws an error in IE11 in IE8 document mode.
+      // The reason behind this is that console.log has type "object" in IE8...
+      try {
+        hasApply = !!logFn.apply;
+      } catch (e) {}
+
+      if (hasApply) {
         return function() {
           var args = [];
           forEach(arguments, function(arg) {
@@ -109,8 +155,8 @@ function $LogProvider(){
       // we are IE which either doesn't have window.console => this is noop and we do nothing,
       // or we are IE where console.log doesn't have apply so we log at least first 2 args
       return function(arg1, arg2) {
-        logFn(arg1, arg2);
-      }
+        logFn(arg1, arg2 == null ? '' : arg2);
+      };
     }
   }];
 }

@@ -5,17 +5,20 @@ describe('HTML', function() {
   var expectHTML;
 
   beforeEach(module('ngSanitize'));
-
-  beforeEach(inject(function($sanitize) {
+  beforeEach(function() {
     expectHTML = function(html){
-      return expect($sanitize(html));
+      var sanitize;
+      inject(function($sanitize) {
+        sanitize = $sanitize;
+      });
+      return expect(sanitize(html));
     };
-  }));
+  });
 
   describe('htmlParser', function() {
     if (angular.isUndefined(window.htmlParser)) return;
 
-    var handler, start, text;
+    var handler, start, text, comment;
     beforeEach(function() {
       handler = {
           start: function(tag, attrs, unary){
@@ -24,7 +27,7 @@ describe('HTML', function() {
                 attrs: attrs,
                 unary: unary
             };
-            // Since different browsers handle newlines differenttly we trim
+            // Since different browsers handle newlines differently we trim
             // so that it is easier to write tests.
             angular.forEach(attrs, function(value, key) {
               attrs[key] = value.replace(/^\s*/, '').replace(/\s*$/, '')
@@ -35,8 +38,40 @@ describe('HTML', function() {
           },
           end:function(tag) {
             expect(tag).toEqual(start.tag);
+          },
+          comment:function(comment_) {
+            comment = comment_;
           }
       };
+    });
+
+    it('should parse comments', function() {
+      htmlParser('<!--FOOBAR-->', handler);
+      expect(comment).toEqual('FOOBAR');
+    });
+
+    it('should throw an exception for invalid comments', function() {
+      var caught=false;
+      try {
+        htmlParser('<!-->', handler);
+      }
+      catch (ex) {
+        caught = true;
+        // expected an exception due to a bad parse
+      }
+      expect(caught).toBe(true);
+    });
+
+    it('double-dashes are not allowed in a comment', function() {
+      var caught=false;
+      try {
+        htmlParser('<!-- -- -->', handler);
+      }
+      catch (ex) {
+        caught = true;
+        // expected an exception due to a bad parse
+      }
+      expect(caught).toBe(true);
     });
 
     it('should parse basic format', function() {
@@ -78,6 +113,13 @@ describe('HTML', function() {
 
   it('should remove script', function() {
     expectHTML('a<SCRIPT>evil< / scrIpt >c.').toEqual('ac.');
+  });
+
+  it('should remove DOCTYPE header', function() {
+    expectHTML('<!DOCTYPE html>').toEqual('');
+    expectHTML('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"\n"http://www.w3.org/TR/html4/strict.dtd">').toEqual('');
+    expectHTML('a<!DOCTYPE html>c.').toEqual('ac.');
+    expectHTML('a<!DocTyPe html>c.').toEqual('ac.');
   });
 
   it('should remove nested script', function() {
@@ -144,13 +186,22 @@ describe('HTML', function() {
       toEqual('');
   });
 
+  it('should keep spaces as prefix/postfix', function() {
+    expectHTML(' a ').toEqual(' a ');
+  });
+
+  it('should allow multiline strings', function() {
+    expectHTML('\na\n').toEqual('&#10;a\&#10;');
+  });
+
   describe('htmlSanitizerWriter', function() {
     if (angular.isUndefined(window.htmlSanitizeWriter)) return;
 
-    var writer, html;
+    var writer, html, uriValidator;
     beforeEach(function() {
       html = '';
-      writer = htmlSanitizeWriter({push:function(text){html+=text;}});
+      uriValidator = jasmine.createSpy('uriValidator');
+      writer = htmlSanitizeWriter({push:function(text){html+=text;}}, uriValidator);
     });
 
     it('should write basic HTML', function() {
@@ -188,7 +239,7 @@ describe('HTML', function() {
       expect(html).toEqual('<div>');
     });
 
-    describe('explicitly dissallow', function() {
+    describe('explicitly disallow', function() {
       it('should not allow attributes', function() {
         writer.start('div', {id:'a', name:'a', style:'a'});
         expect(html).toEqual('<div>');
@@ -219,35 +270,106 @@ describe('HTML', function() {
       });
     });
 
-    describe('isUri', function() {
-
-      function isUri(value) {
-        return value.match(URI_REGEXP);
-      }
-
-      it('should be URI', function() {
-        expect(isUri('http://abc')).toBeTruthy();
-        expect(isUri('https://abc')).toBeTruthy();
-        expect(isUri('ftp://abc')).toBeTruthy();
-        expect(isUri('mailto:me@example.com')).toBeTruthy();
-        expect(isUri('#anchor')).toBeTruthy();
+    describe('uri validation', function() {
+      it('should call the uri validator', function() {
+        writer.start('a', {href:'someUrl'}, false);
+        expect(uriValidator).toHaveBeenCalledWith('someUrl', false);
+        uriValidator.reset();
+        writer.start('img', {src:'someImgUrl'}, false);
+        expect(uriValidator).toHaveBeenCalledWith('someImgUrl', true);
+        uriValidator.reset();
+        writer.start('someTag', {src:'someNonUrl'}, false);
+        expect(uriValidator).not.toHaveBeenCalled();
       });
 
-      it('should not be UIR', function() {
-        expect(isUri('')).toBeFalsy();
-        expect(isUri('javascript:alert')).toBeFalsy();
+      it('should drop non valid uri attributes', function() {
+        uriValidator.andReturn(false);
+        writer.start('a', {href:'someUrl'}, false);
+        expect(html).toEqual('<a>');
+
+        html = '';
+        uriValidator.andReturn(true);
+        writer.start('a', {href:'someUrl'}, false);
+        expect(html).toEqual('<a href="someUrl">');
+      });
+    });
+  });
+
+  describe('uri checking', function() {
+    beforeEach(function() {
+      this.addMatchers({
+        toBeValidUrl: function() {
+          var sanitize;
+          inject(function($sanitize) {
+            sanitize = $sanitize;
+          });
+          var input = '<a href="'+this.actual+'"></a>';
+          return sanitize(input) === input;
+        },
+        toBeValidImageSrc: function() {
+          var sanitize;
+          inject(function($sanitize) {
+            sanitize = $sanitize;
+          });
+          var input = '<img src="'+this.actual+'"/>';
+          return sanitize(input) === input;
+        }
       });
     });
 
-    describe('javascript URL attribute', function() {
-      beforeEach(function() {
-        this.addMatchers({
-          toBeValidUrl: function() {
-            return URI_REGEXP.exec(this.actual);
-          }
-        });
+    it('should use $$sanitizeUri for links', function() {
+      var $$sanitizeUri = jasmine.createSpy('$$sanitizeUri');
+      module(function($provide) {
+        $provide.value('$$sanitizeUri', $$sanitizeUri);
       });
+      inject(function() {
+        $$sanitizeUri.andReturn('someUri');
 
+        expectHTML('<a href="someUri"></a>').toEqual('<a href="someUri"></a>');
+        expect($$sanitizeUri).toHaveBeenCalledWith('someUri', false);
+
+        $$sanitizeUri.andReturn('unsafe:someUri');
+        expectHTML('<a href="someUri"></a>').toEqual('<a></a>');
+      });
+    });
+
+    it('should use $$sanitizeUri for links', function() {
+      var $$sanitizeUri = jasmine.createSpy('$$sanitizeUri');
+      module(function($provide) {
+        $provide.value('$$sanitizeUri', $$sanitizeUri);
+      });
+      inject(function() {
+        $$sanitizeUri.andReturn('someUri');
+
+        expectHTML('<img src="someUri"/>').toEqual('<img src="someUri"/>');
+        expect($$sanitizeUri).toHaveBeenCalledWith('someUri', true);
+
+        $$sanitizeUri.andReturn('unsafe:someUri');
+        expectHTML('<img src="someUri"/>').toEqual('<img/>');
+      });
+    });
+
+    it('should be URI', function() {
+      expect('').toBeValidUrl();
+      expect('http://abc').toBeValidUrl();
+      expect('HTTP://abc').toBeValidUrl();
+      expect('https://abc').toBeValidUrl();
+      expect('HTTPS://abc').toBeValidUrl();
+      expect('ftp://abc').toBeValidUrl();
+      expect('FTP://abc').toBeValidUrl();
+      expect('mailto:me@example.com').toBeValidUrl();
+      expect('MAILTO:me@example.com').toBeValidUrl();
+      expect('tel:123-123-1234').toBeValidUrl();
+      expect('TEL:123-123-1234').toBeValidUrl();
+      expect('#anchor').toBeValidUrl();
+      expect('/page1.md').toBeValidUrl();
+    });
+
+    it('should not be URI', function() {
+      expect('javascript:alert').not.toBeValidUrl();
+    });
+
+    describe('javascript URLs', function() {
       it('should ignore javascript:', function() {
         expect('JavaScript:abc').not.toBeValidUrl();
         expect(' \n Java\n Script:abc').not.toBeValidUrl();
@@ -273,14 +395,71 @@ describe('HTML', function() {
       });
 
       it('should ignore hex encoded whitespace javascript:', function() {
-        expect('jav&#x09;ascript:alert("A");').not.toBeValidUrl();
-        expect('jav&#x0A;ascript:alert("B");').not.toBeValidUrl();
-        expect('jav&#x0A ascript:alert("C");').not.toBeValidUrl();
-        expect('jav\u0000ascript:alert("D");').not.toBeValidUrl();
-        expect('java\u0000\u0000script:alert("D");').not.toBeValidUrl();
-        expect(' &#14; java\u0000\u0000script:alert("D");').not.toBeValidUrl();
+        expect('jav&#x09;ascript:alert();').not.toBeValidUrl();
+        expect('jav&#x0A;ascript:alert();').not.toBeValidUrl();
+        expect('jav&#x0A ascript:alert();').not.toBeValidUrl();
+        expect('jav\u0000ascript:alert();').not.toBeValidUrl();
+        expect('java\u0000\u0000script:alert();').not.toBeValidUrl();
+        expect(' &#14; java\u0000\u0000script:alert();').not.toBeValidUrl();
       });
     });
+  });
 
+  describe('sanitizeText', function() {
+    it('should escape text', function() {
+      expect(sanitizeText('a<div>&</div>c')).toEqual('a&lt;div&gt;&amp;&lt;/div&gt;c');
+    });
+  });
+});
+
+describe('decodeEntities', function() {
+  var handler, text,
+      origHiddenPre = window.hiddenPre;
+
+  beforeEach(function() {
+    text = '';
+    handler = {
+      start: function() {},
+      chars: function(text_){
+        text = text_;
+      },
+      end: function() {},
+      comment: function() {}
+    };
+    module('ngSanitize');
+  });
+
+  afterEach(function() {
+    window.hiddenPre = origHiddenPre;
+  });
+
+  it('should use innerText if textContent is not available (IE<9)', function() {
+    window.hiddenPre = {
+      innerText: 'INNER_TEXT'
+    };
+    inject(function($sanitize) {
+      htmlParser('<tag>text</tag>', handler);
+      expect(text).toEqual('INNER_TEXT');
+    });
+  });
+  it('should use textContent if available', function() {
+    window.hiddenPre = {
+      textContent: 'TEXT_CONTENT',
+      innerText: 'INNER_TEXT'
+    };
+    inject(function($sanitize) {
+      htmlParser('<tag>text</tag>', handler);
+      expect(text).toEqual('TEXT_CONTENT');
+    });
+  });
+  it('should use textContent even if empty', function() {
+    window.hiddenPre = {
+      textContent: '',
+      innerText: 'INNER_TEXT'
+    };
+    inject(function($sanitize) {
+      htmlParser('<tag>text</tag>', handler);
+      expect(text).toEqual('');
+    });
   });
 });

@@ -49,7 +49,7 @@ angular.scenario.Application.prototype.getWindow_ = function() {
  */
 angular.scenario.Application.prototype.navigateTo = function(url, loadFn, errorFn) {
   var self = this;
-  var frame = this.getFrame_();
+  var frame = self.getFrame_();
   //TODO(esprehn): Refactor to use rethrow()
   errorFn = errorFn || function(e) { throw e; };
   if (url === 'about:blank') {
@@ -57,21 +57,36 @@ angular.scenario.Application.prototype.navigateTo = function(url, loadFn, errorF
   } else if (url.charAt(0) === '#') {
     url = frame.attr('src').split('#')[0] + url;
     frame.attr('src', url);
-    this.executeAction(loadFn);
+    self.executeAction(loadFn);
   } else {
     frame.remove();
-    this.context.find('#test-frames').append('<iframe>');
-    frame = this.getFrame_();
+    self.context.find('#test-frames').append('<iframe>');
+    frame = self.getFrame_();
+
     frame.load(function() {
-      frame.unbind();
+      frame.off();
       try {
+        var $window = self.getWindow_();
+
+        if ($window.angular) {
+          // Disable animations
+          $window.angular.resumeBootstrap([['$provide', function($provide) {
+            return ['$animate', function($animate) {
+              $animate.enabled(false);
+            }];
+          }]]);
+        }
+
         self.executeAction(loadFn);
       } catch (e) {
         errorFn(e);
       }
     }).attr('src', url);
+
+    // for IE compatibility set the name *after* setting the frame url
+    frame[0].contentWindow.name = "NG_DEFER_BOOTSTRAP!";
   }
-  this.context.find('> h2 a').attr('href', url).text(url);
+  self.context.find('> h2 a').attr('href', url).text(url);
 };
 
 /**

@@ -1,8 +1,87 @@
 'use strict';
 
+/* global
+    angularModule: true,
+    version: true,
+
+    $LocaleProvider,
+    $CompileProvider,
+
+    htmlAnchorDirective,
+    inputDirective,
+    inputDirective,
+    formDirective,
+    scriptDirective,
+    selectDirective,
+    styleDirective,
+    optionDirective,
+    ngBindDirective,
+    ngBindHtmlDirective,
+    ngBindTemplateDirective,
+    ngClassDirective,
+    ngClassEvenDirective,
+    ngClassOddDirective,
+    ngCspDirective,
+    ngCloakDirective,
+    ngControllerDirective,
+    ngFormDirective,
+    ngHideDirective,
+    ngIfDirective,
+    ngIncludeDirective,
+    ngIncludeFillContentDirective,
+    ngInitDirective,
+    ngNonBindableDirective,
+    ngPluralizeDirective,
+    ngRepeatDirective,
+    ngShowDirective,
+    ngStyleDirective,
+    ngSwitchDirective,
+    ngSwitchWhenDirective,
+    ngSwitchDefaultDirective,
+    ngOptionsDirective,
+    ngTranscludeDirective,
+    ngModelDirective,
+    ngListDirective,
+    ngChangeDirective,
+    requiredDirective,
+    requiredDirective,
+    ngValueDirective,
+    ngAttributeAliasDirectives,
+    ngEventDirectives,
+
+    $AnchorScrollProvider,
+    $AnimateProvider,
+    $BrowserProvider,
+    $CacheFactoryProvider,
+    $ControllerProvider,
+    $DocumentProvider,
+    $ExceptionHandlerProvider,
+    $FilterProvider,
+    $InterpolateProvider,
+    $IntervalProvider,
+    $HttpProvider,
+    $HttpBackendProvider,
+    $LocationProvider,
+    $LogProvider,
+    $ParseProvider,
+    $RootScopeProvider,
+    $QProvider,
+    $$SanitizeUriProvider,
+    $SceProvider,
+    $SceDelegateProvider,
+    $SnifferProvider,
+    $TemplateCacheProvider,
+    $TimeoutProvider,
+    $$RAFProvider,
+    $$AsyncCallbackProvider,
+    $WindowProvider
+*/
+
+
 /**
- * @ngdoc property
+ * @ngdoc object
  * @name angular.version
+ * @module ng
  * @description
  * An object that contains information about the current AngularJS version. This object has the
  * following properties:
@@ -14,8 +93,8 @@
  * - `codeName` – `{string}` – Code name of the release, such as "jiggling-armfat".
  */
 var version = {
-  full: '"NG_VERSION_FULL"',    // all of these placeholder strings will be replaced by rake's
-  major: "NG_VERSION_MAJOR",    // compile task
+  full: '"NG_VERSION_FULL"',    // all of these placeholder strings will be replaced by grunt's
+  major: "NG_VERSION_MAJOR",    // package task
   minor: "NG_VERSION_MINOR",
   dot: "NG_VERSION_DOT",
   codeName: '"NG_VERSION_CODENAME"'
@@ -48,7 +127,9 @@ function publishExternalAPI(angular){
     'isDate': isDate,
     'lowercase': lowercase,
     'uppercase': uppercase,
-    'callbacks': {counter: 0}
+    'callbacks': {counter: 0},
+    '$$minErr': minErr,
+    '$$csp': csp
   });
 
   angularModule = setupModuleLoader(window);
@@ -60,6 +141,10 @@ function publishExternalAPI(angular){
 
   angularModule('ng', ['ngLocale'], ['$provide',
     function ngModule($provide) {
+      // $$sanitizeUriProvider needs to be before $compileProvider as it is used by it.
+      $provide.provider({
+        $$sanitizeUri: $$SanitizeUriProvider
+      });
       $provide.provider('$compile', $CompileProvider).
         directive({
             a: htmlAnchorDirective,
@@ -71,29 +156,27 @@ function publishExternalAPI(angular){
             style: styleDirective,
             option: optionDirective,
             ngBind: ngBindDirective,
-            ngBindHtmlUnsafe: ngBindHtmlUnsafeDirective,
+            ngBindHtml: ngBindHtmlDirective,
             ngBindTemplate: ngBindTemplateDirective,
             ngClass: ngClassDirective,
             ngClassEven: ngClassEvenDirective,
             ngClassOdd: ngClassOddDirective,
-            ngCsp: ngCspDirective,
             ngCloak: ngCloakDirective,
             ngController: ngControllerDirective,
             ngForm: ngFormDirective,
             ngHide: ngHideDirective,
+            ngIf: ngIfDirective,
             ngInclude: ngIncludeDirective,
             ngInit: ngInitDirective,
             ngNonBindable: ngNonBindableDirective,
             ngPluralize: ngPluralizeDirective,
             ngRepeat: ngRepeatDirective,
             ngShow: ngShowDirective,
-            ngSubmit: ngSubmitDirective,
             ngStyle: ngStyleDirective,
             ngSwitch: ngSwitchDirective,
             ngSwitchWhen: ngSwitchWhenDirective,
             ngSwitchDefault: ngSwitchDefaultDirective,
             ngOptions: ngOptionsDirective,
-            ngView: ngViewDirective,
             ngTransclude: ngTranscludeDirective,
             ngModel: ngModelDirective,
             ngList: ngListDirective,
@@ -102,10 +185,14 @@ function publishExternalAPI(angular){
             ngRequired: requiredDirective,
             ngValue: ngValueDirective
         }).
+        directive({
+          ngInclude: ngIncludeFillContentDirective
+        }).
         directive(ngAttributeAliasDirectives).
         directive(ngEventDirectives);
       $provide.provider({
         $anchorScroll: $AnchorScrollProvider,
+        $animate: $AnimateProvider,
         $browser: $BrowserProvider,
         $cacheFactory: $CacheFactoryProvider,
         $controller: $ControllerProvider,
@@ -113,19 +200,22 @@ function publishExternalAPI(angular){
         $exceptionHandler: $ExceptionHandlerProvider,
         $filter: $FilterProvider,
         $interpolate: $InterpolateProvider,
+        $interval: $IntervalProvider,
         $http: $HttpProvider,
         $httpBackend: $HttpBackendProvider,
         $location: $LocationProvider,
         $log: $LogProvider,
         $parse: $ParseProvider,
-        $route: $RouteProvider,
-        $routeParams: $RouteParamsProvider,
         $rootScope: $RootScopeProvider,
         $q: $QProvider,
+        $sce: $SceProvider,
+        $sceDelegate: $SceDelegateProvider,
         $sniffer: $SnifferProvider,
         $templateCache: $TemplateCacheProvider,
         $timeout: $TimeoutProvider,
-        $window: $WindowProvider
+        $window: $WindowProvider,
+        $$rAF: $$RAFProvider,
+        $$asyncCallback : $$AsyncCallbackProvider
       });
     }
   ]);
